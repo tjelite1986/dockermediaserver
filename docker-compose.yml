@@ -1,0 +1,251 @@
+version: "3.9"
+
+networks:
+  default:
+    driver: bridge
+  npm_proxy:
+    name: npm_proxy
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.68.0/24
+
+x-environment: &default-tz-puid-pgid
+  TZ: $TZ
+  PUID: $PUID
+  PGID: $PGID
+
+x-common-keys-core: &common-keys-core
+  networks:
+    - npm_proxy
+  security_opt:
+    - no-new-privileges:true
+  restart: always
+
+x-common-keys-apps: &common-keys-apps
+  networks:
+    - npm_proxy
+  security_opt:
+   - no-new-privileges:true
+  restart: unless-stopped
+
+x-common-keys-media: &common-keys-media
+  networks:
+    - npm_proxy
+  security_opt:
+    - no-new-privileges:true
+  restart: "no"
+  
+services:
+# Portainer - WebUI for Containers
+  portainer:
+    <<: *common-keys-core # See EXTENSION FIELDS at the top
+    container_name: portainer
+    image: portainer/portainer-ce:latest
+    command: -H unix:///var/run/docker.sock
+    networks:
+      - npm_proxy
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Use Docker Socket Proxy and commen>
+      - $DOCKERDIR/appdata/portainer/data:/data # Change to local directory if you want t>
+    environment:
+      - TZ=$TZ  
+# Nginx Proxy Manager - Reverse Proxy with LetsEncrypt
+  npm:
+    <<: *common-keys-core # See EXTENSION FIELDS at the top
+    container_name: nginx-proxy-manager
+    image: 'jc21/nginx-proxy-manager:latest'
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.202 # You can specify a static IP
+    ports:
+      - '80:80' # Public HTTP Port. Port Forwarding on Router is ON.
+      - '443:443' # Public HTTPS Port. Port Forwarding on Router is ON.
+      - '81:81' # Admin Web Port.
+    volumes:
+      - $DOCKERDIR/appdata/npm/config:/config
+      - $DOCKERDIR/appdata/npm/letsencrypt:/etc/letsencrypt
+      - $DOCKERDIR/appdata/npm/data:/data
+    environment:
+      DB_SQLITE_FILE: "/config/database.sqlite"
+      DISABLE_IPV6: 'true'   
+# Prowlarr - Indexer Proxy
+  prowlarr:
+    <<: *common-keys-apps # See EXTENSION FIELDS at the top
+    image: ghcr.io/linuxserver/prowlarr:develop
+    container_name: prowlarr
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.203
+    ports:
+      - "9696:9696"
+    volumes:
+      - $DOCKERDIR/appdata/prowlarr:/config
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      <<: *default-tz-puid-pgid
+# Bazarr - Subtitle Management
+  bazarr:
+    <<: *common-keys-media # See EXTENSION FIELDS a>
+    image: lscr.io/linuxserver/bazarr
+    container_name: bazarr
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.204
+    ports:
+      - "6767:6767"
+    volumes:
+      - $DOCKERDIR/appdata/bazarr:/config
+      - $DATADIR:/storage
+    environment:
+      <<: *default-tz-puid-pgid
+# qBittorrent - Torrent downloader without VPN
+  qbittorrent:
+    <<: *common-keys-apps # See EXTENSION FIELDS at the top
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.205
+    ports:
+      - "8080:8080"
+    volumes:
+      - $DOCKERDIR/appdata/qbittorrent:/config
+      - $DATADIR/downloads:/downloads
+    environment:
+      <<: *default-tz-puid-pgid
+      UMASK_SET: 002
+# Radarr - Movie management
+  radarr:
+    <<: *common-keys-media # See EXTENSION FIELDS at the top
+    image: lscr.io/linuxserver/radarr:nightly # latest was causing "Error parsing column 45"
+    container_name: radarr
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.206
+    ports:
+      - "7878:7878"
+    volumes:
+      - $DOCKERDIR/appdata/radarr:/config
+      - $DATADIR/downloads:/downloads
+      - $DATADIR:/storage
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      <<: *default-tz-puid-pgid
+# Sonarr - TV Shows management
+  sonarr:
+    <<: *common-keys-media # See EXTENSION FIELDS at the >
+    image: lscr.io/linuxserver/sonarr
+    container_name: sonarr
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.207
+    ports:
+      - "8989:8989"
+    volumes:
+      - $DOCKERDIR/appdata/sonarr:/config
+      - $DATADIR/downloads:/downloads
+      - $DATADIR:/storage
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      <<: *default-tz-puid-pgid
+# Whisparr - Porn management
+  whisparr:
+    <<: *common-keys-media # See EXTENSION FIELDS at the
+    image: cr.hotio.dev/hotio/whisparr
+    container_name: whisparr
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.208
+    ports:
+      - "6969:6969"
+    volumes:
+      - $DOCKERDIR/appdata/whisparr:/config
+      - $DATADIR/downloads:/downloads
+      - $DATADIR:/storage
+      - "/etc/localtime:/etc/localtime:ro"
+    environment:
+      <<: *default-tz-puid-pgid
+# xTeve - TV Management
+  xteve:
+    <<: *common-keys-media # See EXTENSION FIELDS at the >
+    image: dnsforge/xteve:latest
+    container_name: xteve
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.209
+    ports:
+      - "34400:34400"
+    volumes:
+      - $DOCKERDIR/appdata/xteve:/config
+    environment:
+      <<: *default-tz-puid-pgid
+# Plex - Media Server
+  plexms:
+    <<: *common-keys-media # See EXTENSION FIELDS at the top
+    image: plexinc/pms-docker:public
+    container_name: plexms
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.210
+    ports:
+      - "32400:32400/tcp"
+      - "3005:3005/tcp"
+      - "8324:8324/tcp"
+      - "32469:32469/tcp"
+      # - "1900:1900/udp" # Conflicts with xTeVe and Synology>
+      - "32410:32410/udp"
+      - "32412:32412/udp"
+      - "32413:32413/udp"
+      - "32414:32414/udp"
+      # - "33400:33400" # If you use Plex Web Tools
+    #devices: - /dev/dri:/dev/dri # for harware transcoding
+    volumes:
+      - $DOCKERDIR/appdata/plex:/config
+      - $DATADIR:/storage
+      - /dev/shm:/transcode
+    environment:
+      TZ: $TZ
+      HOSTNAME: "Mediaserver"
+      PLEX_CLAIM: "claim-tokenhere"
+      PLEX_UID: $PUID
+      PLEX_GID: $PGID
+      ADVERTISE_IP: 192.168.xx.xxx
+#  Jellyfin - Media Server
+  jellyfin:
+    <<: *common-keys-media # See EXTENSION
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    #devices: - /dev/dri:/dev/dri # for harware transcoding
+    networks:
+      npm_proxy:
+        ipv4_address: 192.168.68.211
+    ports:
+      - "8096:8096"
+      - "8920:8920" # Emby also uses same port if running both
+    environment:
+      <<: *default-tz-puid-pgid
+      UMASK_SET: 022
+    volumes:
+      - $DOCKERDIR/appdata/jellyfin:/config
+      - $DATADIR/downloads://downloads
+      - $DATADIR:/storage
+      - /dev/shm:/data/transcode # Offload transcoding to RAM if you
+# WatchTower - Automatic Docker Container Updates
+  watchtower:
+    <<: *common-keys-core # See EXTENSION FIELDS >
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: $TZ
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_REMOVE_VOLUMES: "true"
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_NO_STARTUP_MESSAGE: "false"
+      WATCHTOWER_SCHEDULE: "0 30 12 * * *"
+
+      DOCKER_API_VERSION: "1.40"
